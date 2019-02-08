@@ -283,59 +283,29 @@ class Hook
             }
         }
 
-        
         if(!$route->isCli)
         {
-            $params_result = [];
-            $scount = 0;
-
-            foreach(explode('/', $path) as $currentSegmentIndex => $segment)
+            foreach(explode('/', $path) as $i => $segment)
             {
-                $key = [];
-
-                if(preg_match('/\{(.*?)\}+/', $segment))
+                if(preg_match('/^\{(.*)\}$/', $segment))
                 {
+                    $segment = preg_replace('/\((.*)\):/', '', $segment);
 
-                    foreach ($route->params as $param) 
-                    {
-                        if (empty($key[$param->getSegmentIndex()])) 
-                        {
-                            $key[$param->getSegmentIndex()] = str_replace($param->getSegment(), '('.$param->getRegex().')', $param->getFullSegment());
-                        } else {
-                            $key[$param->getSegmentIndex()] = str_replace($param->getSegment(), '('.$param->getRegex().')', $key[$param->getSegmentIndex()]);
-                        }
+                    $route->params[$pcount]->value =  $URI->segment($i+1);
+
+                    if(is_callable($route->getAction()) && !empty($URI->segment($i+1))){
+                        $params[$route->params[$pcount]->getName()] = $URI->segment($i+1);
                     }
 
-                    foreach ($route->params as $param) 
+                    // Removing "sticky" route parameters
+                    if(substr($route->params[$pcount]->getName(), 0, 1) == '_')
                     {
-                        if ($param->segmentIndex === $currentSegmentIndex) 
-                        {
-                            $segment = preg_replace('/\((.*)\):/', '', $segment);
-
-                            if (preg_match('#^'.$key[$currentSegmentIndex].'$#', $URI->segment($currentSegmentIndex+1), $matches)) {
-                                if (isset($matches[$pcount + 1 - $scount])) {
-                                    $route->params[$pcount]->value = $matches[$pcount + 1 - $scount];
-                                }
-                            }
-
-                            if(is_callable($route->getAction()) && !empty($URI->segment($currentSegmentIndex+1))){
-                                $params[$route->params[$pcount]->getName()] = $URI->segment($currentSegmentIndex+1);
-                            }
-
-                            // Removing "sticky" route parameters
-                            if(substr($param->getName(), 0, 1) !== '_')
-                            {
-                                $params_result[] = $route->params[$pcount]->value;
-                            }
-
-                            $pcount++;
-                        }
+                        unset($params[$pcount]);
                     }
-                    $scount++;
+
+                    $pcount++;
                 }
             }
-
-            $params = $params_result;
         }
         else
         {
@@ -459,7 +429,8 @@ class Hook
 
                 foreach($middleware as $_middleware)
                 {
-                    ci()->middleware->run($_middleware);
+                    $args = ci()->route->getMiddlewareArg($_middleware);
+                    ci()->middleware->run($_middleware, $args);
                 }
             }
         }

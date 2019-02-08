@@ -49,6 +49,17 @@ class Route
     private $middleware = [];
 
     /**
+     * @var array
+     */
+    private $middlewareArgs = [];
+
+/**
+     * @var array
+     */
+    private $middlewareIgnore = [];
+
+
+    /**
      * @var string
      */
     private $namespace = '';
@@ -92,10 +103,10 @@ class Route
      * @var string
      */
     public $requestMethod;
-    
+
     /**
      * Gets compiled routes (Alias of RouteBuilder::getRoutes())
-     * 
+     *
      * @return array
      */
     public static function getRoutes()
@@ -104,27 +115,21 @@ class Route
     }
 
     /**
-     * @param string|array  $methods  Route accepted HTTP verbs
-     * @param array         $route    Route attributes
+     * @param string|array $methods Route accepted HTTP verbs
+     * @param array $route Route attributes
      */
     public function __construct($methods, $route)
     {
-        if($methods == 'any')
-        {
+        if ($methods == 'any') {
             $methods = RouteBuilder::HTTP_VERBS;
-        }
-        elseif(is_string($methods))
-        {
+        } elseif (is_string($methods)) {
 
-            $methods = [ strtoupper($methods) ];
-        }
-        else
-        {
+            $methods = [strtoupper($methods)];
+        } else {
             array_shift($route);
         }
 
-        foreach($methods as $method)
-        {
+        foreach ($methods as $method) {
             $this->methods[] = strtoupper($method);
         }
 
@@ -132,8 +137,7 @@ class Route
         list($path, $action) = $route;
         $this->path = trim($path, '/') == '' ? '/' : trim($path, '/');
 
-        if(!is_callable($action) && count(explode('@', $action)) != 2)
-        {
+        if (!is_callable($action) && count(explode('@', $action)) != 2) {
             show_error('Route action must be in <strong>controller@method</strong> syntax or be a valid callback');
         }
 
@@ -141,118 +145,128 @@ class Route
         $attributes = isset($route[2]) && is_array($route[2]) ? $route[2] : NULL;
 
         // Route group inherited attributes
-        if(!empty(RouteBuilder::getContext('prefix')))
-        {
+        if (!empty(RouteBuilder::getContext('prefix'))) {
             $prefixes = RouteBuilder::getContext('prefix');
-            foreach($prefixes as $prefix)
-            {
-                $this->prefix .= trim($prefix,'/') != '' ? '/' .trim($prefix, '/') : '';
+            foreach ($prefixes as $prefix) {
+                $this->prefix .= trim($prefix, '/') != '' ? '/' . trim($prefix, '/') : '';
             }
-            $this->prefix = trim($this->prefix,'/');
+            $this->prefix = trim($this->prefix, '/');
         }
 
-        if(!empty(RouteBuilder::getContext('namespace')))
-        {
+        if (!empty(RouteBuilder::getContext('namespace'))) {
             $namespaces = RouteBuilder::getContext('namespace');
-            foreach($namespaces as $namespace)
-            {
-                $this->namespace .= trim($namespace, '/') != '' ? '/' .trim($namespace, '/') : '';
+            foreach ($namespaces as $namespace) {
+                $this->namespace .= trim($namespace, '/') != '' ? '/' . trim($namespace, '/') : '';
             }
-            $this->namespace = trim($this->namespace,'/');
+            $this->namespace = trim($this->namespace, '/');
         }
 
-        if(!empty(RouteBuilder::getContext('middleware')['route']))
-        {
+        if (!empty(RouteBuilder::getContext('middleware')['route'])) {
             $middlewares = RouteBuilder::getContext('middleware')['route'];
-            foreach($middlewares as $middleware)
-            {
-                if(!in_array($middleware, $this->middleware))
-                {
-                    $this->middleware[] = $middleware;
+
+            foreach ($middlewares as $middleware) {
+                if (!in_array($middleware, $this->middleware)) {
+
+                    $_args = [];
+                    $_middleware = [];
+
+                    foreach ($middleware as $ix => $mw) {
+                        if (is_string($mw)) {
+                            $_args[$mw] = [];
+                            $_middleware[] = $mw;
+                        } else {
+                            $_args[$ix] = $mw;
+                            $_middleware[] = $ix;
+                        }
+                    }
+
+                    $this->middleware[] = $_middleware;
+                    $this->middlewareArgs = $_args; //TODO misschien fout
                 }
             }
         }
 
         // Optional route attributes
-        if($attributes !== NULL)
-        {
-            if(isset($attributes['namespace']))
-            {
-                $this->namespace = (!empty($this->namespace) ? '/' : '' ) . trim($attributes['namespace'], '/');
+        if ($attributes !== NULL) {
+            if (isset($attributes['namespace'])) {
+                $this->namespace = (!empty($this->namespace) ? '/' : '') . trim($attributes['namespace'], '/');
             }
 
-            if(isset($attributes['prefix']))
-            {
-                $this->prefix .= (!empty($this->prefix) ? '/' : '' ) . trim($attributes['prefix'], '/');
+            if (isset($attributes['prefix'])) {
+                $this->prefix .= (!empty($this->prefix) ? '/' : '') . trim($attributes['prefix'], '/');
             }
 
-            if(isset($attributes['middleware']))
-            {
-                if(is_string($attributes['middleware']))
-                {
-                    $attributes['middleware'] = [ $attributes['middleware'] ];
+            if (isset($attributes['middleware'])) {
+                if (is_string($attributes['middleware'])) {
+                    $attributes['middleware'] = [$attributes['middleware']];
+
+                /* added by Johan */
+                } else {
+
+                    $_args = [];
+                    $_middleware = [];
+
+                    foreach ($attributes['middleware'] as $ix => $mw) {
+                        if (is_string($mw)) {
+                            $_args[$mw] = [];
+                            $_middleware[] = $mw;
+                        } else {
+                            $_args[$ix] = $mw;
+                            $_middleware[] = $ix;
+                        }
+                    }
+
+                    $attributes['middleware'] = $_middleware;
+
+                    $this->middlewareArgs = array_merge_recursive($this->middlewareArgs, $_args);
+
                 }
+                /* /added by Johan */
 
                 $this->middleware = array_merge($this->middleware, array_unique($attributes['middleware']));
             }
         }
 
         // Parsing route parameters
-        $_names   = [];
-        $fullPath = trim($this->prefix,'/') != '' ? $this->prefix . '/' . $this->path : $this->path;
+        $_names = [];
+        $fullPath = trim($this->prefix, '/') != '' ? $this->prefix . '/' . $this->path : $this->path;
         $fullPath = trim($fullPath, '/') == '' ? '/' : trim($fullPath, '/');
 
         $this->fullPath = $fullPath;
 
-        foreach(explode('/', $fullPath) as $i => $segment)
-        {
-            if(preg_match_all('/\{(.*?)\}+/', $segment, $matches))
-            {
-                if($this->paramOffset === null)
-                {
+        foreach (explode('/', $fullPath) as $i => $segment) {
+            if (preg_match('/^\{(.*)\}$/', $segment)) {
+                if ($this->paramOffset === null) {
                     $this->paramOffset = $i;
                 }
 
-                $params = [];
+                $param = new RouteParam($segment);
 
-                foreach ($matches[0] as $paramCode) {
-                    $params[] = new RouteParam($paramCode, $i, $segment);
+                if (in_array($param->getName(), $_names)) {
+                    show_error('Duplicate route parameter <strong>' . $param->getName() . '</strong> in route <strong>"' . $this->path . '</strong>"');
                 }
 
-                foreach ($params as $key => $param) {
-                    if(in_array($param->getName(), $_names))
-                    {
-                        show_error('Duplicate route parameter <strong>' . $param->getName() . '</strong> in route <strong>"' .  $this->path . '</strong>"');
-                    }
+                $_names[] = $param->getName();
 
-                    $_names[] = $param->getName();
-
-                    if( $param->isOptional() )
-                    {
-                        $this->hasOptionalParams = true;
-                        if($this->optionalParamOffset === null)
-                        {
-                            $this->optionalParamOffset = $i;
-                        }
+                if ($param->isOptional()) {
+                    $this->hasOptionalParams = true;
+                    if ($this->optionalParamOffset === null) {
+                        $this->optionalParamOffset = $i;
                     }
-                    else
-                    {
-                        if( $this->hasOptionalParams )
-                        {
-                            show_error('Required <strong>' . $param->getName() . '</strong> route parameter is not allowed at this position in <strong>"' . $this->path . '"</strong> route');
-                        }
+                } else {
+                    if ($this->hasOptionalParams) {
+                        show_error('Required <strong>' . $param->getName() . '</strong> route parameter is not allowed at this position in <strong>"' . $this->path . '"</strong> route');
                     }
-                    $this->params[] = $param;
                 }
+                $this->params[] = $param;
             }
         }
-        
+
         // Automatically set the default controller if the path is "/"
-        if($fullPath == '/' && in_array('GET', $this->methods))
-        {
+        if ($fullPath == '/' && in_array('GET', $this->methods)) {
             RouteBuilder::$compiled['reserved']['default_controller'] = is_string($action)
-                ? ( empty($this->namespace) ? str_ireplace('@', '/', $action) : RouteBuilder::DEFAULT_CONTROLLER )
-                :  RouteBuilder::DEFAULT_CONTROLLER;
+                ? (empty($this->namespace) ? str_ireplace('@', '/', $action) : RouteBuilder::DEFAULT_CONTROLLER)
+                : RouteBuilder::DEFAULT_CONTROLLER;
         }
 
         $this->isCli = is_cli();
@@ -267,59 +281,48 @@ class Route
     {
         $routes = [];
 
-        foreach($this->methods as $method)
-        {
+        foreach ($this->methods as $method) {
             $path = $this->fullPath;
 
-            foreach($this->params as $param)
-            {
-                $path = str_ireplace($param->getSegment(),  $param->getPlaceholder(), $path);
+            foreach ($this->params as $param) {
+                $path = str_ireplace($param->getSegment(), $param->getPlaceholder(), $path);
             }
 
             $pCount = 0;
 
-            if(is_callable($this->action))
-            {
+            if (is_callable($this->action)) {
                 $target = RouteBuilder::DEFAULT_CONTROLLER;
                 $baseTarget = $target;
-            }
-            else
-            {
-                $baseTarget = ( !empty($this->namespace) ? $this->namespace . '/' : '' )
-                    . str_ireplace('@','/', $this->action);
+            } else {
+                $baseTarget = (!empty($this->namespace) ? $this->namespace . '/' : '')
+                    . str_ireplace('@', '/', $this->action);
 
                 $target = $baseTarget;
 
-                foreach($this->params as $c => $param)
-                {
+                foreach ($this->params as $c => $param) {
                     $target .= '/$' . ($c + 1);
-                    if(!$param->isOptional())
-                    {
-                        $baseTarget .= '/$'. ($c + 1);
+                    if (!$param->isOptional()) {
+                        $baseTarget .= '/$' . ($c + 1);
                         $pCount++;
                     }
                 }
             }
 
             // Fallback routes
-            if($this->optionalParamOffset !== null)
-            {
+            if ($this->optionalParamOffset !== null) {
                 $segments = explode('/', $path);
-                $sCount   = count($segments);
+                $sCount = count($segments);
                 $basePath = implode('/', array_slice($segments, 0, $this->optionalParamOffset));
                 $routes[][$basePath][$method] = $baseTarget;
 
-                for($i = $this->optionalParamOffset; $i < $sCount; $i++)
-                {
+                for ($i = $this->optionalParamOffset; $i < $sCount; $i++) {
                     $basePath .= '/' . $segments[$i];
-                    if(is_string($this->action))
-                    {
+                    if (is_string($this->action)) {
                         $baseTarget .= '/$' . ++$pCount;
                     }
                     $routes[][$basePath][$method] = $baseTarget;
                 }
             }
-            
             // Main route
             $routes[][$path][$method] = $target;
         }
@@ -329,20 +332,17 @@ class Route
 
     /**
      * Gets or sets a route parameter
-     * 
-     * @param  string  $name  Parameter name
-     * @param  string  $value Parameter value
-     * 
+     *
+     * @param  string $name Parameter name
+     * @param  string $value Parameter value
+     *
      * @return mixed
      */
     public function param($name, $value = null)
     {
-        foreach($this->params as &$_param)
-        {
-            if($name == $_param->getName())
-            {
-                if($value !== null)
-                {
+        foreach ($this->params as &$_param) {
+            if ($name == $_param->getName()) {
+                if ($value !== null) {
                     $_param->value = $value;
                 }
                 return $_param->value;
@@ -353,16 +353,14 @@ class Route
     /**
      * Checks if the route has a specific parameter
      *
-     * @param  string  $name Parameter name
+     * @param  string $name Parameter name
      *
      * @return bool
      */
     public function hasParam($name)
     {
-        foreach($this->params as &$_param)
-        {
-            if($name == $_param->getName())
-            {
+        foreach ($this->params as &$_param) {
+            if ($name == $_param->getName()) {
                 return true;
             }
         }
@@ -381,63 +379,52 @@ class Route
         $defaults = RouteBuilder::getDefaultParams();
 
         // Thanks to @Ihabafia for the suggest!
-        if(is_object($params)){
-            $params = (array) $params;
+        if (is_object($params)) {
+            $params = (array)$params;
         }
-        
-        if(!is_array($params))
-        {
-            if(!empty($params) && count($this->params) == 1)
-            {
-                $params = [ $this->params[0]->getName() => $params ];
-            }
-            else
-            {
+
+        if (!is_array($params)) {
+            if (!empty($params) && count($this->params) == 1) {
+                $params = [$this->params[0]->getName() => $params];
+            } else {
                 $params = [];
             }
         }
 
         $path = $this->getPrefix() . '/' . $this->getPath();
         $skippedOptional = null;
-        
-        foreach($this->params as &$param)
-        {
+
+        foreach ($this->params as &$param) {
             $name = $param->getName();
             $isMissingRequiredField = !$param->isOptional() && !isset($defaults[$name]) && !isset($params[$param->getName()]);
             $alreadySkippedOptionalField = $param->isOptional() && $skippedOptional !== null && (isset($defaults[$name]) || isset($params[$name]));
-            
-            if( $isMissingRequiredField || $alreadySkippedOptionalField )
-            {
+
+            if ($isMissingRequiredField || $alreadySkippedOptionalField) {
                 throw new \Exception('Missing "' . ($skippedOptional === null ? $name : $skippedOptional) . '" parameter for "' . $this->getName() . '" route');
             }
-                        
-            if(isset($defaults[$name]))
-            {
+
+            if (isset($defaults[$name])) {
                 $param->value = $defaults[$param->getName()];
             }
 
-            if(isset($params[$param->getName()]))
-            {
+            if (isset($params[$param->getName()])) {
                 $param->value = $params[$param->getName()];
             }
 
-            if(isset($defaults[$name]) || isset($params[$param->getName()]))
-            {
+            if (isset($defaults[$name]) || isset($params[$param->getName()])) {
                 $path = str_replace($param->getSegment(), $param->value, $path);
-            }
-            else
-            {
-                $skippedOptional = $skippedOptional === null 
-                    ? $param->getName() 
+            } else {
+                $skippedOptional = $skippedOptional === null
+                    ? $param->getName()
                     : $skippedOptional;
-                
+
                 $_path = explode('/', $path);
                 unset($_path[array_search($param->getSegment(), $_path)]);
-                $path  = implode('/', $_path);
+                $path = implode('/', $_path);
             }
         }
 
-        return base_url() . trim($path,'/');
+        return base_url() . trim($path, '/');
     }
 
     /**
@@ -499,7 +486,7 @@ class Route
     /**
      * Sets route path
      *
-     * @param  string  $path
+     * @param  string $path
      *
      * @return self
      */
@@ -532,7 +519,7 @@ class Route
     /**
      * Sets route action
      *
-     * @param  string|callable  $action
+     * @param  string|callable $action
      *
      * @return self
      */
@@ -570,5 +557,9 @@ class Route
     public function getMethods()
     {
         return $this->methods;
+    }
+
+    public function getMiddlewareArg($arg) {
+        return array_key_exists($arg, $this->middlewareArgs) ? $this->middlewareArgs[$arg] : [];
     }
 }
