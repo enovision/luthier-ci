@@ -150,6 +150,34 @@ Route::group('prefix', ['namespace' => 'foo', 'middleware' => ['Admin','IPFilter
     Route::get('bar','test@bar');
     Route::get('baz','test@baz');
 });
+
+// Prefix and shared properties (with Middleware arguments)
+Route::group('prefix', ['namespace' => 'foo', 'middleware' => [
+    'Admin',
+    'IPFilter',
+    'AuthMiddleware' => [
+       'token' => 'tan'
+    ],
+    'Input' => [
+       'rules' => [
+          'start' => 0,
+          'limit' => 25
+       ]
+    ]
+]], function(){
+    Route::get('bar','test@bar');
+    Route::get('baz','test@baz', [
+      'middleware' => [
+        'Input' => [
+           'rules' => [
+              'field1' => [],
+              'field2' => false
+           ]
+        ]  
+      ]
+    ]);
+});
+
 ```
 
 
